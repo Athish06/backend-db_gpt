@@ -124,8 +124,8 @@ def login_api():
             "jwt_token",
             token,
             httponly=True,
-            samesite="Lax",
-            secure=False,  # Set to True in production with HTTPS
+            samesite="None",
+            secure=True,  # Set to True in production with HTTPS
             max_age=86400  # 24 hours
         )
         return response, 200
