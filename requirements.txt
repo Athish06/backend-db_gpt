@@ -1,0 +1,16 @@
+pymongo[srv]==4.9.2
+dnspython==2.7.0
+motor==3.6.0
+groq==0.11.0
+cryptography==43.0.3
+python-jose[cryptography]==3.3.0
+flask-limiter==3.8.0
+redis
+rq
+duckdb
+pandas
+pyarrow
+gunicorn
+Flask-CORS
+Flask
+python-dotenv
