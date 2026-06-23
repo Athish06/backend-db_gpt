@@ -54,6 +54,10 @@ SCHEMA:
 
 You run in a loop of THOUGHT, ACTION, and ACTION_INPUT to solve complex analytical questions.
 
+INITIAL FILTERING RULE:
+Before executing any database queries, you MUST evaluate if the user's question is relevant to the provided SCHEMA.
+If the question is completely irrelevant to the database (e.g., asking for a recipe, general knowledge, or data that clearly does not exist in the schema), you MUST immediately use the FINAL_ANSWER action to politely reject the request, explaining that it falls outside the scope of the connected database.
+
 ALLOWED ACTIONS:
 1. EXECUTE_PRIMARY_QUERY
 - Use this to fetch data from the primary database ({db_type}).
