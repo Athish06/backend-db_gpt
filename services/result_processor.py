@@ -8,7 +8,7 @@ class ResultProcessor:
     FULL_THRESHOLD = 100
     MAX_VALUE_LENGTH = 300
 
-    def process(self, results: List[Dict], total_count: int, hint: str) -> Dict:
+    def process(self, results: List[Dict], total_count: int, hint: str, user_id: str = "anon", db_id: str = "none", target: str = "all") -> Dict:
         if not results:
             return {
                 "status": "success",
@@ -22,7 +22,7 @@ class ResultProcessor:
 
         if hint == "aggregate_only" or n > self.FULL_THRESHOLD:
             # Route large payloads to Parquet
-            cache_id = f"cache_{uuid.uuid4().hex[:8]}"
+            cache_id = f"c_{user_id}_{db_id}_{target}_{uuid.uuid4().hex[:8]}"
             save_to_parquet(cache_id, clean_results)
             
             # Send Data Profile (Observation) to LLM

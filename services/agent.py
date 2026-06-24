@@ -175,6 +175,8 @@ async def run_chat_turn(
     groq = get_groq_client(groq_api_key)
     db_type = db_config.get("type", "")
     db_name = db_config.get("database_name", "")
+    user_id = conversation.get("user_id", "anon")
+    db_id = conversation.get("db_id", "none")
 
     schema_ddl = format_schema_for_prompt(schema_cache, target, db_type)
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -325,7 +327,7 @@ async def run_chat_turn(
                 obs = f"Query Execution Error: {exec_error}"
             else:
                 final_result_count = total_count
-                processed = result_processor.process(raw_results, total_count, hint="full")
+                processed = result_processor.process(raw_results, total_count, hint="full", user_id=user_id, db_id=db_id, target=target)
                 obs = json.dumps(processed, default=str)
                 
             # Compress if needed

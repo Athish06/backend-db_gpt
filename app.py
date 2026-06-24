@@ -319,7 +319,7 @@ def api_chat():
             
         groq_api_key = encryption_service.decrypt(groq_key_encrypted)
         # Enqueue the background task
-        job_id = str(uuid.uuid4())
+        job_id = f"j_{g.user_id}_{db_id}_{target}_{str(uuid.uuid4())[:8]}"
         task_queue.enqueue(
             'services.agent_worker.execute_agent_task',
             kwargs={
@@ -377,7 +377,7 @@ def api_chat_resume(conversation_id):
             return jsonify({"error": "No paused state found for this conversation"}), 400
             
         # Enqueue the background task with the resume state
-        job_id = str(uuid.uuid4())
+        job_id = f"j_{g.user_id}_{conversation['db_id']}_{conversation['target']}_{str(uuid.uuid4())[:8]}"
         task_queue.enqueue(
             'services.agent_worker.execute_agent_task',
             kwargs={
@@ -489,7 +489,96 @@ def delete_conversation_api(conversation_id):
     if success:
         return jsonify({"success": True}), 200
     return jsonify({"error": "Conversation not found or deletion failed"}), 404
+@app.route('/api/storage', methods=['GET'])
+@require_auth
+def get_storage_stats():
+    import os
+    from services.redis_client import get_redis_connection
+    from services.parquet_manager import CACHE_DIR
+    
+    db = get_project_db()
+    
+    # 1. MongoDB Schema Cache Stats
+    schema_cursor = db.schema_cache.find({"user_id": g.user_id})
+    schema_cache_stats = []
+    for doc in schema_cursor:
+        # Approximate size of BSON
+        approx_size = len(str(doc))
+        schema_cache_stats.append({
+            "db_id": doc["db_id"],
+            "target": "schema",
+            "size_bytes": approx_size,
+            "expires_at": doc.get("expires_at", None)
+        })
+        
+    # 2. DuckDB Parquet Files
+    parquet_stats = []
+    if os.path.exists(CACHE_DIR):
+        for filename in os.listdir(CACHE_DIR):
+            if filename.startswith(f"c_{g.user_id}_"):
+                filepath = os.path.join(CACHE_DIR, filename)
+                try:
+                    size = os.path.getsize(filepath)
+                    parts = filename.split("_")
+                    if len(parts) >= 5:
+                        db_id = parts[2]
+                        target = parts[3]
+                        parquet_stats.append({
+                            "db_id": db_id,
+                            "target": target,
+                            "filename": filename,
+                            "size_bytes": size
+                        })
+                except Exception:
+                    pass
+                    
+    # 3. Redis Queue Stats
+    redis_conn = get_redis_connection()
+    redis_stats = []
+    
+    def scan_redis(prefix, type_name):
+        for key in redis_conn.scan_iter(f"{prefix}:j_{g.user_id}_*"):
+            key_str = key.decode("utf-8")
+            parts = key_str.split("_")
+            if len(parts) >= 5:
+                db_id = parts[2]
+                target = parts[3]
+                try:
+                    size = redis_conn.memory_usage(key) or 0
+                    redis_stats.append({
+                        "db_id": db_id,
+                        "target": target,
+                        "type": type_name,
+                        "key": key_str,
+                        "size_bytes": size
+                    })
+                except Exception:
+                    pass
+                    
+    scan_redis("scratchpad", "scratchpad")
+    scan_redis("job_status", "job_status")
+    
+    # Group by database and target
+    grouped = {}
+    
+    def add_to_group(item, category):
+        k = f"{item['db_id']}_{item['target']}"
+        if k not in grouped:
+            grouped[k] = {
+                "db_id": item['db_id'],
+                "target": item['target'],
+                "schema_cache": {"count": 0, "size_bytes": 0},
+                "parquet_files": {"count": 0, "size_bytes": 0},
+                "redis_keys": {"count": 0, "size_bytes": 0}
+            }
+        grouped[k][category]["count"] += 1
+        grouped[k][category]["size_bytes"] += item["size_bytes"]
 
+    for item in schema_cache_stats: add_to_group(item, "schema_cache")
+    for item in parquet_stats: add_to_group(item, "parquet_files")
+    for item in redis_stats: add_to_group(item, "redis_keys")
+
+    return jsonify(list(grouped.values()))
 if __name__ == "__main__":
     # Disable Werkzeug reloader on Windows to prevent PyMongo socket clashes (WinError 10038)
     app.run(debug=True, use_reloader=False)
