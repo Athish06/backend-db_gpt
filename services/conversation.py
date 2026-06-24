@@ -103,6 +103,36 @@ class ConversationManager:
             }
         )
 
+    def remove_last_turn(self, conversation_id: str):
+        """Remove the last user message and any subsequent messages (like assistant responses)."""
+        db = get_project_db()
+        conv = db.conversations.find_one({"_id": ObjectId(conversation_id)})
+        if not conv or not conv.get("messages"):
+            return
+
+        messages = conv["messages"]
+        new_messages = []
+        user_popped = False
+
+        for msg in reversed(messages):
+            if not user_popped:
+                if msg["role"] == "user":
+                    user_popped = True
+                continue
+            new_messages.insert(0, msg)
+
+        db.conversations.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {
+                "$set": {
+                    "messages": new_messages,
+                    "message_count": len(new_messages),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+
+
     def get_context_for_llm(self, conversation: Dict) -> List[Dict]:
         """Return the last N messages formatted for Groq API."""
         messages = conversation.get("messages", [])

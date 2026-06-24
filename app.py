@@ -302,9 +302,13 @@ def api_chat():
     target = data.get("target")  # table or collection name
     message = data.get("message")
     conversation_id = data.get("conversation_id")
+    overwrite_last = data.get("overwrite_last", False)
     
     if not all([db_id, target, message]):
         return jsonify({"error": "Missing db_id, target, or message"}), 400
+        
+    if overwrite_last and conversation_id:
+        conversation_manager.remove_last_turn(conversation_id)
         
     try:
         db = get_project_db()
