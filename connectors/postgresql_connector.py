@@ -101,7 +101,17 @@ class PostgreSQLConnector(BaseDBConnector):
 
         return {
             "table_name": table_name,
-            "columns": [dict(col) for col in columns],
+            "columns": [
+                {
+                    "name": col["column_name"],
+                    "data_type": col["data_type"],
+                    "nullable": col["is_nullable"],
+                    "is_primary_key": col["is_primary_key"],
+                    "foreign_table": col["foreign_table"],
+                    "foreign_column": col["foreign_column"]
+                }
+                for col in columns
+            ],
             "row_count_approx": row_count
         }
 
