@@ -15,30 +15,44 @@ from services.redis_client import set_scratchpad
 def format_schema_for_prompt(schema_cache: Dict, target_table: str, db_type: str) -> str:
     if db_type in ("postgresql", "supabase"):
         schemas = schema_cache.get("sql_schemas", {})
-        if target_table not in schemas:
-            return f"-- Table '{target_table}' schema not available"
-        cols = schemas[target_table]["columns"]
-        ddl = f"CREATE TABLE {target_table} (\n"
-        col_parts = []
-        for col in cols:
-            pk = " PRIMARY KEY" if col.get("is_primary_key") else ""
-            nullable = "" if col.get("nullable") == "YES" else " NOT NULL"
-            col_parts.append(f"    {col['name']} {col['data_type']}{pk}{nullable}")
-        ddl += ",\n".join(col_parts) + "\n);"
-        return ddl
+        target_tables = list(schemas.keys()) if target_table == "__all__" else [target_table]
+        
+        ddls = []
+        for t in target_tables:
+            if t not in schemas:
+                ddls.append(f"-- Table '{t}' schema not available")
+                continue
+            cols = schemas[t]["columns"]
+            ddl = f"CREATE TABLE {t} (\n"
+            col_parts = []
+            for col in cols:
+                pk = " PRIMARY KEY" if col.get("is_primary_key") else ""
+                nullable = "" if col.get("nullable") == "YES" else " NOT NULL"
+                col_parts.append(f"    {col['name']} {col['data_type']}{pk}{nullable}")
+            ddl += ",\n".join(col_parts) + "\n);"
+            ddls.append(ddl)
+        return "\n\n".join(ddls)
+        
     elif db_type == "mongodb":
         mongo_schemas = schema_cache.get("mongo_schemas", {})
-        if target_table not in mongo_schemas:
-            return f"-- Collection '{target_table}' schema not available"
-        fields = mongo_schemas[target_table]["fields"]
-        lines = [f"Collection: {target_table}", "Fields (inferred from document samples):"]
-        for fname, fmeta in fields.items():
-            ptype = fmeta.get("primary_type", "mixed")
-            samples = fmeta.get("sample_values", [])
-            sample_str = f"  (e.g. {samples[0]})" if samples else ""
-            array_flag = " [array]" if fmeta.get("is_array") else ""
-            lines.append(f"  {fname}: {ptype}{array_flag}{sample_str}")
-        return "\n".join(lines)
+        target_cols = list(mongo_schemas.keys()) if target_table == "__all__" else [target_table]
+        
+        blocks = []
+        for c in target_cols:
+            if c not in mongo_schemas:
+                blocks.append(f"-- Collection '{c}' schema not available")
+                continue
+            fields = mongo_schemas[c]["fields"]
+            lines = [f"Collection: {c}", "Fields (inferred from document samples):"]
+            for fname, fmeta in fields.items():
+                ptype = fmeta.get("primary_type", "mixed")
+                samples = fmeta.get("sample_values", [])
+                sample_str = f"  (e.g. {samples[0]})" if samples else ""
+                array_flag = " [array]" if fmeta.get("is_array") else ""
+                lines.append(f"  {fname}: {ptype}{array_flag}{sample_str}")
+            blocks.append("\n".join(lines))
+        return "\n\n".join(blocks)
+        
     return "Schema unavailable"
 
 

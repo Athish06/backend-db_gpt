@@ -106,6 +106,58 @@ def view_tables():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/db_summary', methods=['POST'])
+@require_auth
+def view_db_summary():
+    """
+    Expects JSON with db_id.
+    Returns summary of all tables (name, column count, row count).
+    """
+    data = request.get_json()
+    db_id = data.get("db_id")
+    if not db_id:
+        return jsonify({"error": "Missing db_id"}), 400
+        
+    try:
+        db_config = _get_user_db_config(g.user_id, db_id)
+        schema_data = schema_cache_service.get(g.user_id, db_id)
+        
+        if not schema_data:
+            connector = get_connector(db_config)
+            tables = connector.get_tables_or_collections()
+            schemas = {}
+            for t in tables:
+                try:
+                    schemas[t] = connector.get_schema(t)
+                except Exception as e:
+                    print(f"Failed to fetch schema for {t}: {e}")
+            connector.close()
+            schema_data = {
+                "sql_schemas": schemas if db_config.type in (DBType.POSTGRESQL, DBType.SUPABASE) else {},
+                "mongo_schemas": schemas if db_config.type == DBType.MONGODB else {}
+            }
+            schema_cache_service.set(g.user_id, db_id, schema_data)
+
+        summary = []
+        if db_config.type in (DBType.POSTGRESQL, DBType.SUPABASE):
+            for t_name, s_data in schema_data.get("sql_schemas", {}).items():
+                summary.append({
+                    "table_name": t_name,
+                    "columns_count": len(s_data.get("columns", [])),
+                    "row_count": s_data.get("row_count_approx", 0)
+                })
+        else:
+            for c_name, s_data in schema_data.get("mongo_schemas", {}).items():
+                summary.append({
+                    "table_name": c_name,
+                    "columns_count": len(s_data.get("fields", {}).keys()),
+                    "row_count": s_data.get("document_count", 0)
+                })
+                
+        return jsonify({"summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/table/<table_name>', methods=['POST'])
 @require_auth
 def view_table_data(table_name):
