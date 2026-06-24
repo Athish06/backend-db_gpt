@@ -657,6 +657,73 @@ def get_storage_details():
         "parquet_files": parquet_data,
         "redis_keys": redis_data
     })
+
+@app.route('/api/storage', methods=['DELETE'])
+@require_auth
+def delete_storage():
+    import os
+    from services.redis_client import get_redis_connection
+    from services.parquet_manager import CACHE_DIR
+    
+    db_id = request.args.get('db_id')
+    target = request.args.get('target') # Optional: if not provided, means entire DB
+    
+    if not db_id:
+        return jsonify({"error": "Missing db_id"}), 400
+        
+    db = get_project_db()
+    redis_conn = get_redis_connection()
+    
+    deleted_parquet = 0
+    deleted_redis = 0
+    deleted_schema = False
+    
+    try:
+        # Scenario A: Delete Specific Target
+        if target:
+            # 1. Parquet Files
+            if os.path.exists(CACHE_DIR):
+                for filename in os.listdir(CACHE_DIR):
+                    if filename.startswith(f"c_{g.user_id}_{db_id}_{target}_"):
+                        os.remove(os.path.join(CACHE_DIR, filename))
+                        deleted_parquet += 1
+                        
+            # 2. Redis Keys
+            for prefix in ["scratchpad", "job_status"]:
+                for key in redis_conn.scan_iter(f"{prefix}:j_{g.user_id}_{db_id}_{target}_*"):
+                    redis_conn.delete(key)
+                    deleted_redis += 1
+                    
+        # Scenario B: Delete Entire DB
+        else:
+            # 1. MongoDB Schema Cache
+            res = db.schema_cache.delete_one({"user_id": g.user_id, "db_id": db_id})
+            deleted_schema = res.deleted_count > 0
+            
+            # 2. Parquet Files
+            if os.path.exists(CACHE_DIR):
+                for filename in os.listdir(CACHE_DIR):
+                    if filename.startswith(f"c_{g.user_id}_{db_id}_"):
+                        os.remove(os.path.join(CACHE_DIR, filename))
+                        deleted_parquet += 1
+                        
+            # 3. Redis Keys
+            for prefix in ["scratchpad", "job_status"]:
+                for key in redis_conn.scan_iter(f"{prefix}:j_{g.user_id}_{db_id}_*"):
+                    redis_conn.delete(key)
+                    deleted_redis += 1
+                    
+        return jsonify({
+            "success": True,
+            "deleted": {
+                "parquet_files": deleted_parquet,
+                "redis_keys": deleted_redis,
+                "schema_cache": deleted_schema
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
     # Disable Werkzeug reloader on Windows to prevent PyMongo socket clashes (WinError 10038)
     app.run(debug=True, use_reloader=False)
