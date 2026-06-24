@@ -93,6 +93,9 @@ Pay close attention to semantic phrasing.
 If asked for "Total Lost Profit," calculate the profit lost for every specific event occurrence (frequency), not just the sum of unique products.
 If asked for "Unique Users," explicitly use DISTINCT user_id.
 
+5. Zero Row Results:
+If a condition results in zero rows, do not modify the condition. Simply report that no data meets the criteria.
+
 ALLOWED ACTIONS:
 1. EXECUTE_PRIMARY_QUERY
 - Use this to fetch data from the primary database ({db_type}).

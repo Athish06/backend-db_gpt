@@ -579,6 +579,84 @@ def get_storage_stats():
     for item in redis_stats: add_to_group(item, "redis_keys")
 
     return jsonify(list(grouped.values()))
+
+@app.route('/api/storage/details', methods=['GET'])
+@require_auth
+def get_storage_details():
+    import os
+    import pandas as pd
+    from services.redis_client import get_redis_connection
+    from services.parquet_manager import CACHE_DIR
+    
+    db_id = request.args.get('db_id')
+    target = request.args.get('target')
+    
+    if not db_id or not target:
+        return jsonify({"error": "Missing db_id or target"}), 400
+        
+    db = get_project_db()
+    
+    # 1. MongoDB Schema
+    schema_doc = db.schema_cache.find_one({"user_id": g.user_id, "db_id": db_id})
+    if schema_doc:
+        schema_doc.pop("_id", None)
+        schema_doc.pop("expires_at", None)
+        schema_doc.pop("cached_at", None)
+        
+    # 2. DuckDB Parquet Data
+    parquet_data = []
+    if os.path.exists(CACHE_DIR):
+        for filename in os.listdir(CACHE_DIR):
+            if filename.startswith(f"c_{g.user_id}_{db_id}_{target}"):
+                filepath = os.path.join(CACHE_DIR, filename)
+                try:
+                    df = pd.read_parquet(filepath)
+                    # Limit to 50 rows to prevent overwhelming the browser
+                    preview = df.head(50).to_dict(orient="records")
+                    parquet_data.append({
+                        "filename": filename,
+                        "rows": preview,
+                        "total_rows": len(df)
+                    })
+                except Exception as e:
+                    parquet_data.append({
+                        "filename": filename,
+                        "error": str(e)
+                    })
+                    
+    # 3. Redis Queue Data
+    redis_conn = get_redis_connection()
+    redis_data = []
+    
+    def scan_redis_details(prefix):
+        for key in redis_conn.scan_iter(f"{prefix}:j_{g.user_id}_{db_id}_{target}_*"):
+            try:
+                raw_val = redis_conn.get(key)
+                if raw_val:
+                    # Attempt to parse as JSON if possible
+                    import json
+                    val_str = raw_val.decode("utf-8")
+                    try:
+                        val = json.loads(val_str)
+                    except:
+                        val = val_str
+                        
+                    redis_data.append({
+                        "key": key.decode("utf-8"),
+                        "type": prefix,
+                        "value": val
+                    })
+            except Exception:
+                pass
+                
+    scan_redis_details("scratchpad")
+    scan_redis_details("job_status")
+    
+    return jsonify({
+        "schema_cache": schema_doc,
+        "parquet_files": parquet_data,
+        "redis_keys": redis_data
+    })
 if __name__ == "__main__":
     # Disable Werkzeug reloader on Windows to prevent PyMongo socket clashes (WinError 10038)
     app.run(debug=True, use_reloader=False)
