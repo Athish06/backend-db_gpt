@@ -224,7 +224,7 @@ def add_db():
         "type": db_type,
         "database_name": data.get("database_name", ""),
         "host": data.get("host", ""),
-        "port": int(data.get("port", 5432)),
+        "port": int(data.get("port") or 5432),
         "username_encrypted": encryption_service.encrypt(data.get("user_name", "")) if data.get("user_name") else "",
         "password_encrypted": encryption_service.encrypt(data.get("password", "")) if data.get("password") else "",
         "ssl_required": data.get("ssl_required", False),
